@@ -1,11 +1,16 @@
-...
+import os
+import requests
+import time
+import telegram
+
+from dotenv import load_dotenv
 
 load_dotenv()
 
 
-PRACTICUM_TOKEN = ...
-TELEGRAM_TOKEN = ...
-TELEGRAM_CHAT_ID = ...
+PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
 RETRY_TIME = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
@@ -18,57 +23,57 @@ HOMEWORK_STATUSES = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
+LAST_STATUS = ''
+
 
 def send_message(bot, message):
-    ...
+    bot.send_message(TELEGRAM_CHAT_ID, message)
 
 
 def get_api_answer(current_timestamp):
-    timestamp = current_timestamp or int(time.time())
+    timestamp = current_timestamp #or int(time.time())
     params = {'from_date': timestamp}
-
-    ...
+    homework_statuses = requests.get(ENDPOINT, headers=HEADERS, params=params)
+    return homework_statuses.json()
 
 
 def check_response(response):
-
-    ...
+    if response.get('code') == None:
+        return response.get('homeworks')
 
 
 def parse_status(homework):
-    homework_name = ...
-    homework_status = ...
-
-    ...
-
-    verdict = ...
-
-    ...
+    global LAST_STATUS
+    homework_name = homework.get('homework_name')
+    homework_status = homework.get('status')
+    verdict = HOMEWORK_STATUSES[homework_status]
+    if LAST_STATUS == verdict:
+        pass
+    
+    LAST_STATUS = verdict
 
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def check_tokens():
-    ...
+    return (TELEGRAM_TOKEN != None
+           and TELEGRAM_CHAT_ID != None
+           and PRACTICUM_TOKEN != None)
 
 
 def main():
     """Основная логика работы бота."""
 
-    ...
-
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    current_timestamp = int(time.time())
+    current_timestamp = 0#int(time.time())
 
-    ...
 
     while True:
         try:
-            response = ...
-
-            ...
-
-            current_timestamp = ...
+            response = get_api_answer(current_timestamp)
+            homeworks = check_response(response)
+            message = parse_status(homeworks[0])
+            send_message(bot, message)
             time.sleep(RETRY_TIME)
 
         except Exception as error:
