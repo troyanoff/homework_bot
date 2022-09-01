@@ -1,34 +1,38 @@
-class NoKeysException(Exception):
+class KittyBotExceptions(Exception):
+    """Kittybot нашел ошибку."""
+
+
+class NoKeys(KittyBotExceptions):
     """Отсутствует элемент переменного окружения."""
 
     pass
 
 
-class FailSendException(Exception):
+class FailSend(KittyBotExceptions):
     """Сбой отправки сообщения в телеграмм."""
 
     pass
 
 
-class DisableEndpointException(Exception):
+class DisableEndpoint(KittyBotExceptions):
     """Указанный эндпоинт недоступен."""
 
     pass
 
 
-class ProblemEndpointException(Exception):
+class ProblemEndpoint(KittyBotExceptions):
     """Сбой в обращении к эндпоинту."""
 
     pass
 
 
-class ProcessingProblemException(Exception):
+class ProcessingProblem(KittyBotExceptions):
     """Отсутствие ожидаемых ключей в ответе API."""
 
     pass
 
 
-class SurpriseStatusException(Exception):
+class SurpriseStatus(KittyBotExceptions):
     """Обнаружен недокументированный статус работы."""
 
     pass

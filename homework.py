@@ -4,16 +4,19 @@ import requests
 import time
 import telegram
 
+
 from dotenv import load_dotenv
+from http import HTTPStatus
 
 from exceptions import (
-    NoKeysException,
-    FailSendException,
-    DisableEndpointException,
-    ProblemEndpointException,
-    ProcessingProblemException,
-    SurpriseStatusException
+    KittyBotExceptions,
+    NoKeys,
+    DisableEndpoint,
+    ProblemEndpoint,
+    ProcessingProblem,
+    SurpriseStatus
 )
+
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -23,10 +26,7 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 hendler = logging.StreamHandler()
-formatter = logging.Formatter('%(asctime)s, %(levelname)s, %(message)s')
-hendler.setFormatter(formatter)
 logger.addHandler(hendler)
 
 
@@ -47,38 +47,41 @@ HOMEWORK_STATUSES = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
-LAST_STATUS = ''
+LAST_STATUS = {}
 LAST_MESSAGE = ''
 
 
 def send_message(bot, message):
     """Отправка сообщения ботом."""
-    try:
-        bot.send_message(TELEGRAM_CHAT_ID, message)
-        logger.info('Сообщение успешно отправлено.')
-    except FailSendException:
-        logger.error(FailSendException.__doc__)
+    bot.send_message(TELEGRAM_CHAT_ID, message)
+    logger.info('Сообщение успешно отправлено.')
 
 
 def get_api_answer(current_timestamp):
     """Получения ответа от API."""
-    timestamp = current_timestamp
-    params = {'from_date': timestamp}
-    homework_statuses = requests.get(ENDPOINT, headers=HEADERS, params=params)
-    if homework_statuses.status_code != 200:
-        raise DisableEndpointException
+    if current_timestamp is None:
+        raise ProblemEndpoint
+    params = {'from_date': current_timestamp}
+    try:
+        homework_statuses = requests.get(
+            ENDPOINT, headers=HEADERS, params=params)
+    except Exception as error:
+        logger.error(f'При обращении к сервису возникла ошибка - {error}')
+    if homework_statuses.status_code != HTTPStatus.OK:
+        raise DisableEndpoint
     return homework_statuses.json()
 
 
 def check_response(response):
     """Проверка ответа от API."""
-    if type(response) != dict and type(response['homeworks']) != dict:
-        raise ProblemEndpointException
+    if not isinstance(response, dict):
+        raise ProblemEndpoint
     if 'homeworks' not in response:
-        raise ProcessingProblemException
-    if type(response.get('homeworks')) != list:
-        raise ProblemEndpointException
-    return response.get('homeworks')
+        raise ProcessingProblem
+    homeworks = response.get('homeworks')
+    if not isinstance(homeworks, list):
+        raise ProblemEndpoint
+    return homeworks
 
 
 def parse_status(homework):
@@ -86,27 +89,32 @@ def parse_status(homework):
     global LAST_STATUS
     homework_name = homework.get('homework_name')
     homework_status = homework.get('status')
+    if any((homework_name, homework_status)) is None:
+        raise ProcessingProblem
+    if homework_status not in HOMEWORK_STATUSES:
+        raise SurpriseStatus
     verdict = HOMEWORK_STATUSES[homework_status]
-    if LAST_STATUS == verdict:
+    fix_status = LAST_STATUS.get(homework_name)
+    if homework_name in LAST_STATUS and fix_status == homework_status:
         logger.debug('В ответе отсутствуют новые статусы.')
     else:
-        LAST_STATUS = verdict
+        fix_status = verdict
         return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def check_tokens():
     """Проверка наличия переменных окружения."""
-    return (TELEGRAM_TOKEN is not None
-            and TELEGRAM_CHAT_ID is not None
-            and PRACTICUM_TOKEN is not None)
+    keys = (TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, PRACTICUM_TOKEN)
+    return all(keys)
 
 
 def except_return(bot, exception_name):
+    """Обработка исключений."""
     global LAST_MESSAGE
-    if exception_name == Exception:
+    if not isinstance(exception_name, KittyBotExceptions):
         message = f'Сбой в работе программы: {exception_name}'
     message = exception_name.__doc__
-    if exception_name == NoKeysException:
+    if isinstance(exception_name, NoKeys):
         logger.critical(message)
     else:
         logger.error(message)
@@ -116,34 +124,24 @@ def except_return(bot, exception_name):
     time.sleep(RETRY_TIME)
 
 
-# flake8: noqa: C901
 def main():
     """Основная логика работы бота."""
-    if not check_tokens():
-        raise NoKeysException
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = 0
 
     while True:
         try:
+            if not check_tokens():
+                raise NoKeys
             response = get_api_answer(current_timestamp)
             homeworks = check_response(response)
+            # "В качестве параметра функция получает
+            # только один элемент из списка домашних работ."
+            # Цитата из ТЗ. Проверка ответа произведена в check_response().
             message = parse_status(homeworks[0])
             send_message(bot, message)
             current_timestamp = int(time.time())
             time.sleep(RETRY_TIME)
-        except NoKeysException:
-            except_return(bot, NoKeysException)
-        except FailSendException:
-            except_return(bot, FailSendException)
-        except DisableEndpointException:
-            except_return(bot, DisableEndpointException)
-        except ProblemEndpointException:
-            except_return(bot, ProblemEndpointException)
-        except ProcessingProblemException:
-            except_return(bot, ProcessingProblemException)
-        except SurpriseStatusException:
-            except_return(bot, SurpriseStatusException)
         except Exception:
             except_return(bot, Exception)
 
