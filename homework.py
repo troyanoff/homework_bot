@@ -13,8 +13,7 @@ from exceptions import (
     NoKeys,
     DisableEndpoint,
     ProblemEndpoint,
-    ProcessingProblem,
-    SurpriseStatus
+    ProcessingProblem
 )
 
 
@@ -75,7 +74,7 @@ def get_api_answer(current_timestamp):
 def check_response(response):
     """Проверка ответа от API."""
     if not isinstance(response, dict):
-        raise ProblemEndpoint
+        raise TypeError
     if 'homeworks' not in response:
         raise ProcessingProblem
     homeworks = response.get('homeworks')
@@ -92,7 +91,7 @@ def parse_status(homework):
     if any((homework_name, homework_status)) is None:
         raise ProcessingProblem
     if homework_status not in HOMEWORK_STATUSES:
-        raise SurpriseStatus
+        raise KeyError
     verdict = HOMEWORK_STATUSES[homework_status]
     fix_status = LAST_STATUS.get(homework_name)
     if homework_name in LAST_STATUS and fix_status == homework_status:
