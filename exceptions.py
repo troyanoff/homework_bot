@@ -32,7 +32,7 @@ class ProcessingProblem(KittyBotExceptions):
     pass
 
 
-class SurpriseStatus(KittyBotExceptions):
-    """Обнаружен недокументированный статус работы."""
+class NoHomeworksInList(KittyBotExceptions):
+    """В указаном периоде нет проверяемых работ."""
 
     pass

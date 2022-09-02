@@ -11,9 +11,11 @@ from http import HTTPStatus
 from exceptions import (
     KittyBotExceptions,
     NoKeys,
+    FailSend,
     DisableEndpoint,
     ProblemEndpoint,
-    ProcessingProblem
+    ProcessingProblem,
+    NoHomeworksInList
 )
 
 
@@ -52,20 +54,24 @@ LAST_MESSAGE = ''
 
 def send_message(bot, message):
     """Отправка сообщения ботом."""
-    bot.send_message(TELEGRAM_CHAT_ID, message)
-    logger.info('Сообщение успешно отправлено.')
+    try:
+        bot.send_message(TELEGRAM_CHAT_ID, message)
+        logger.info('Сообщение успешно отправлено.')
+    except Exception as error:
+        logger.error(f'Возникла ошибка - {error}')
+        raise FailSend
 
 
 def get_api_answer(current_timestamp):
     """Получения ответа от API."""
-    if current_timestamp is None:
-        raise ProblemEndpoint
-    params = {'from_date': current_timestamp}
+    begining_period = current_timestamp or int(time.time())
+    params = {'from_date': begining_period}
     try:
         homework_statuses = requests.get(
             ENDPOINT, headers=HEADERS, params=params)
     except Exception as error:
         logger.error(f'При обращении к сервису возникла ошибка - {error}')
+        raise DisableEndpoint
     if homework_statuses.status_code != HTTPStatus.OK:
         raise DisableEndpoint
     return homework_statuses.json()
@@ -74,12 +80,14 @@ def get_api_answer(current_timestamp):
 def check_response(response):
     """Проверка ответа от API."""
     if not isinstance(response, dict):
-        raise TypeError
+        raise TypeError('Ответ API не является словарем.')
     if 'homeworks' not in response:
         raise ProcessingProblem
     homeworks = response.get('homeworks')
     if not isinstance(homeworks, list):
         raise ProblemEndpoint
+    if not response['homeworks']:
+        raise NoHomeworksInList
     return homeworks
 
 
@@ -88,16 +96,18 @@ def parse_status(homework):
     global LAST_STATUS
     homework_name = homework.get('homework_name')
     homework_status = homework.get('status')
-    if any((homework_name, homework_status)) is None:
-        raise ProcessingProblem
+    if not all((homework_name, homework_status)):
+        raise KeyError('В ответе нет нужной информации.')
     if homework_status not in HOMEWORK_STATUSES:
-        raise KeyError
+        raise KeyError('Неизвестный статус.')
     verdict = HOMEWORK_STATUSES[homework_status]
     fix_status = LAST_STATUS.get(homework_name)
     if homework_name in LAST_STATUS and fix_status == homework_status:
-        logger.debug('В ответе отсутствуют новые статусы.')
+        logger.debug(
+            f'В ответе отсутствуют новые статусы для работы {homework_name}.'
+        )
     else:
-        fix_status = verdict
+        LAST_STATUS[homework_name] = verdict
         return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
@@ -107,13 +117,13 @@ def check_tokens():
     return all(keys)
 
 
-def except_return(bot, exception_name):
+def except_return(bot, error):
     """Обработка исключений."""
     global LAST_MESSAGE
-    if not isinstance(exception_name, KittyBotExceptions):
-        message = f'Сбой в работе программы: {exception_name}'
-    message = exception_name.__doc__
-    if isinstance(exception_name, NoKeys):
+    if not isinstance(error, KittyBotExceptions):
+        message = f'Сбой в работе программы: {error}'
+    message = error.__doc__
+    if isinstance(error, NoKeys):
         logger.critical(message)
     else:
         logger.error(message)
@@ -126,23 +136,23 @@ def except_return(bot, exception_name):
 def main():
     """Основная логика работы бота."""
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    current_timestamp = 0
+    current_timestamp = int(time.time())
 
     while True:
         try:
             if not check_tokens():
-                raise NoKeys
+                logger.critical('Бот остановлен из-за отсутствия ключей.')
+                return
             response = get_api_answer(current_timestamp)
             homeworks = check_response(response)
-            # "В качестве параметра функция получает
-            # только один элемент из списка домашних работ."
-            # Цитата из ТЗ. Проверка ответа произведена в check_response().
+            print(response)
+            # for homework in homeworks:
             message = parse_status(homeworks[0])
             send_message(bot, message)
             current_timestamp = int(time.time())
             time.sleep(RETRY_TIME)
-        except Exception:
-            except_return(bot, Exception)
+        except Exception as error:
+            except_return(bot, error)
 
 
 if __name__ == '__main__':
