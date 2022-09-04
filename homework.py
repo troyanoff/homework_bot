@@ -14,8 +14,7 @@ from exceptions import (
     FailSend,
     DisableEndpoint,
     ProblemEndpoint,
-    ProcessingProblem,
-    NoHomeworksInList
+    ProcessingProblem
 )
 
 
@@ -54,11 +53,14 @@ LAST_MESSAGE = ''
 
 def send_message(bot, message):
     """Отправка сообщения ботом."""
+    global LAST_MESSAGE
     try:
-        bot.send_message(TELEGRAM_CHAT_ID, message)
-        logger.info('Сообщение успешно отправлено.')
+        if LAST_MESSAGE != message:
+            bot.send_message(TELEGRAM_CHAT_ID, message)
+            LAST_MESSAGE = message
+            logger.info('Сообщение успешно отправлено.')
     except Exception as error:
-        logger.error(f'Возникла ошибка - {error}')
+        logger.exception(f'Возникла ошибка - {error}')
         raise FailSend
 
 
@@ -86,14 +88,12 @@ def check_response(response):
     homeworks = response.get('homeworks')
     if not isinstance(homeworks, list):
         raise ProblemEndpoint
-    if not response['homeworks']:
-        raise NoHomeworksInList
     return homeworks
 
 
 def parse_status(homework):
     """Обработка ответа и вывод статуса работы."""
-    global LAST_STATUS
+    global LAST_STATUS, LAST_MESSAGE
     homework_name = homework.get('homework_name')
     homework_status = homework.get('status')
     if not all((homework_name, homework_status)):
@@ -106,6 +106,7 @@ def parse_status(homework):
         logger.debug(
             f'В ответе отсутствуют новые статусы для работы {homework_name}.'
         )
+        return LAST_MESSAGE
     else:
         LAST_STATUS[homework_name] = verdict
         return f'Изменился статус проверки работы "{homework_name}". {verdict}'
@@ -127,28 +128,26 @@ def except_return(bot, error):
         logger.critical(message)
     else:
         logger.error(message)
-    if LAST_MESSAGE != message:
-        bot.send_message(TELEGRAM_CHAT_ID, message)
-        LAST_MESSAGE = message
+    send_message(bot, message)
     time.sleep(RETRY_TIME)
 
 
 def main():
     """Основная логика работы бота."""
+    if not check_tokens():
+        logger.critical('Бот остановлен из-за отсутствия ключей.')
+        return
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
 
     while True:
         try:
-            if not check_tokens():
-                logger.critical('Бот остановлен из-за отсутствия ключей.')
-                return
             response = get_api_answer(current_timestamp)
             homeworks = check_response(response)
-            print(response)
-            # for homework in homeworks:
-            message = parse_status(homeworks[0])
-            send_message(bot, message)
+            if homeworks:
+                for homework in homeworks:
+                    message = parse_status(homework)
+                    send_message(bot, message)
             current_timestamp = int(time.time())
             time.sleep(RETRY_TIME)
         except Exception as error:

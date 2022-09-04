@@ -30,9 +30,3 @@ class ProcessingProblem(KittyBotExceptions):
     """Отсутствие ожидаемых ключей в ответе API."""
 
     pass
-
-
-class NoHomeworksInList(KittyBotExceptions):
-    """В указаном периоде нет проверяемых работ."""
-
-    pass
