@@ -60,8 +60,7 @@ def send_message(bot, message):
             LAST_MESSAGE = message
             logger.info('Сообщение успешно отправлено.')
     except Exception as error:
-        logger.exception(f'Возникла ошибка - {error}')
-        raise FailSend
+        raise FailSend from error
 
 
 def get_api_answer(current_timestamp):
@@ -72,8 +71,7 @@ def get_api_answer(current_timestamp):
         homework_statuses = requests.get(
             ENDPOINT, headers=HEADERS, params=params)
     except Exception as error:
-        logger.error(f'При обращении к сервису возникла ошибка - {error}')
-        raise DisableEndpoint
+        raise DisableEndpoint from error
     if homework_statuses.status_code != HTTPStatus.OK:
         raise DisableEndpoint
     return homework_statuses.json()
@@ -120,10 +118,10 @@ def check_tokens():
 
 def except_return(bot, error):
     """Обработка исключений."""
-    global LAST_MESSAGE
     if not isinstance(error, KittyBotExceptions):
         message = f'Сбой в работе программы: {error}'
-    message = error.__doc__
+    else:
+        message = error.__doc__
     if isinstance(error, NoKeys):
         logger.critical(message)
     else:
@@ -144,10 +142,9 @@ def main():
         try:
             response = get_api_answer(current_timestamp)
             homeworks = check_response(response)
-            if homeworks:
-                for homework in homeworks:
-                    message = parse_status(homework)
-                    send_message(bot, message)
+            for homework in homeworks:
+                message = parse_status(homework)
+                send_message(bot, message)
             current_timestamp = int(time.time())
             time.sleep(RETRY_TIME)
         except Exception as error:
